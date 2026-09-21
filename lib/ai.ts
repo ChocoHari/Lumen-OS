@@ -1,3 +1,9 @@
+export type StudyAIResponse = {
+  answer: string;
+  flashcards: { id: number; front: string; back: string }[];
+  quiz: { question: string; answer: string }[];
+};
+
 export function answerFromNotes(question: string, context: string[]) {
   const basis = context.filter(Boolean).join('\n').slice(0, 1600);
   return `Mock AI answer for: "${question}"\n\nBased on your notes:\n${basis || 'No note excerpts available yet.'}`;
@@ -21,4 +27,12 @@ export function generateQuiz(context: string[]) {
       answer: 'Write a 3-5 sentence summary from memory.'
     }
   ];
+}
+
+export function localStudyFallback(question: string, context: string[]): StudyAIResponse {
+  return {
+    answer: answerFromNotes(question, context),
+    flashcards: generateFlashcards(context),
+    quiz: generateQuiz(context)
+  };
 }

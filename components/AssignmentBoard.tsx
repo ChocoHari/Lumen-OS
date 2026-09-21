@@ -1,19 +1,27 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { db, type Assignment } from '@/lib/db';
+import { useAuth } from '@/components/AuthProvider';
+import { db, type Assignment, type Task } from '@/lib/db';
 
 export function AssignmentBoard() {
   const [items, setItems] = useState<Assignment[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [form, setForm] = useState({ courseId: 0, title: '', dueDate: '', priority: 'medium' as Assignment['priority'] });
+  const [newTaskByAssignment, setNewTaskByAssignment] = useState<Record<number, string>>({});
+  const { user } = useAuth();
 
   async function refresh() {
-    setItems(await db.assignments.toArray());
+    if (!user) return;
+    const assignments = await db.assignments.where('userId').equals(user.id).toArray();
+    const userTasks = await db.tasks.where('userId').equals(user.id).toArray();
+    setItems(assignments);
+    setTasks(userTasks);
   }
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [user]);
 
   const overdue = useMemo(
     () =>
@@ -23,13 +31,28 @@ export function AssignmentBoard() {
 
   async function addAssignment() {
     if (!form.title || !form.dueDate) return;
-    await db.assignments.add({ ...form, status: 'todo' });
+    const now = new Date().toISOString();
+    await db.assignments.add({ ...form, userId: user?.id, status: 'todo', createdAt: now, updatedAt: now });
     setForm({ courseId: 0, title: '', dueDate: '', priority: 'medium' });
     await refresh();
   }
 
   async function setStatus(id: number, status: Assignment['status']) {
-    await db.assignments.update(id, { status });
+    await db.assignments.update(id, { status, updatedAt: new Date().toISOString() });
+    await refresh();
+  }
+
+  async function addTask(assignmentId: number) {
+    const title = (newTaskByAssignment[assignmentId] || '').trim();
+    if (!title) return;
+    const now = new Date().toISOString();
+    await db.tasks.add({ assignmentId, title, done: false, userId: user?.id, createdAt: now, updatedAt: now });
+    setNewTaskByAssignment((prev) => ({ ...prev, [assignmentId]: '' }));
+    await refresh();
+  }
+
+  async function setTaskDone(taskId: number, done: boolean) {
+    await db.tasks.update(taskId, { done, updatedAt: new Date().toISOString() });
     await refresh();
   }
 
@@ -67,6 +90,14 @@ export function AssignmentBoard() {
                     <p>Due: {item.dueDate}</p>
                     <p>Priority: {item.priority}</p>
                     <p>Course ID: {item.courseId}</p>
+                    <p>
+                      Tasks:{' '}
+                      {
+                        tasks.filter((task) => task.assignmentId === item.id).filter((task) => task.done).length
+                      }
+                      /
+                      {tasks.filter((task) => task.assignmentId === item.id).length}
+                    </p>
                     <div className="mt-1 flex gap-1">
                       {(['todo', 'doing', 'done'] as const).map((s) => (
                         <button key={s} onClick={() => item.id && setStatus(item.id, s)} className="rounded bg-gray-100 px-2 py-1">
@@ -74,6 +105,27 @@ export function AssignmentBoard() {
                         </button>
                       ))}
                     </div>
+                    {item.id && (
+                      <div className="mt-2 space-y-1">
+                        {tasks
+                          .filter((task) => task.assignmentId === item.id)
+                          .map((task) => (
+                            <label key={task.id} className="flex items-center gap-1">
+                              <input type="checkbox" checked={task.done} onChange={(e) => task.id && setTaskDone(task.id, e.target.checked)} />
+                              <span className={task.done ? 'line-through text-gray-500' : ''}>{task.title}</span>
+                            </label>
+                          ))}
+                        <div className="flex gap-1">
+                          <input
+                            value={newTaskByAssignment[item.id] || ''}
+                            onChange={(e) => setNewTaskByAssignment((prev) => ({ ...prev, [item.id!]: e.target.value }))}
+                            placeholder="Add task"
+                            className="w-full rounded border border-gray-200 px-2 py-1"
+                          />
+                          <button onClick={() => addTask(item.id!)} className="rounded bg-gray-100 px-2 py-1">+</button>
+                        </div>
+                      </div>
+                    )}
                   </article>
                 ))}
             </div>

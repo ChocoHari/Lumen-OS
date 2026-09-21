@@ -1,11 +1,24 @@
 'use client';
 
 import { useState } from 'react';
+import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/components/AuthProvider';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get('next') || '/';
+
+  useEffect(() => {
+    if (!isLoading && user) {
+      router.replace(nextPath);
+    }
+  }, [isLoading, nextPath, router, user]);
 
   async function sendMagicLink() {
     if (!supabase) {
@@ -15,7 +28,7 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/` }
+      options: { emailRedirectTo: `${window.location.origin}${nextPath}` }
     });
 
     setMessage(error ? error.message : 'Magic link sent. Check your email.');
