@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/components/AuthProvider';
 import { db, type Course } from '@/lib/db';
 
-const emptyCourse: Omit<Course, 'createdAt'> = {
+const emptyCourse: Omit<Course, 'createdAt' | 'updatedAt' | 'userId'> = {
   code: '',
   name: '',
   lecturer: '',
@@ -17,14 +18,19 @@ export function CourseGrid() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [form, setForm] = useState(emptyCourse);
+  const { user } = useAuth();
 
   useEffect(() => {
-    db.courses.toArray().then(setCourses);
-  }, []);
+    if (!user) return;
+    db.courses.where('userId').equals(user.id).toArray().then(setCourses);
+  }, [user]);
 
   async function addCourse() {
-    await db.courses.add({ ...form, createdAt: new Date().toISOString() });
-    setCourses(await db.courses.toArray());
+    const now = new Date().toISOString();
+    await db.courses.add({ ...form, userId: user?.id, createdAt: now, updatedAt: now });
+    if (user) {
+      setCourses(await db.courses.where('userId').equals(user.id).toArray());
+    }
     setForm(emptyCourse);
     setIsOpen(false);
   }

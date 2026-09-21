@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '@/components/AuthProvider';
 import { db, type FocusSession } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 
@@ -14,12 +15,14 @@ export function FocusTimer() {
   const [courseId, setCourseId] = useState('');
   const [noteId, setNoteId] = useState('');
   const [history, setHistory] = useState<FocusSession[]>([]);
+  const { user } = useAuth();
 
   useEffect(() => {
-    db.focusSessions.toArray().then((sessions) =>
+    if (!user) return;
+    db.focusSessions.where('userId').equals(user.id).toArray().then((sessions) =>
       setHistory(sessions.filter((s) => s.completedAt.slice(0, 10) === new Date().toISOString().slice(0, 10)))
     );
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (!running) return;
@@ -29,6 +32,7 @@ export function FocusTimer() {
 
   const logSession = useCallback(async () => {
     const session = {
+      userId: user?.id,
       courseId: Number(courseId) || undefined,
       noteId: Number(noteId) || undefined,
       durationMinutes: 25,
@@ -36,19 +40,28 @@ export function FocusTimer() {
     };
 
     await db.focusSessions.add(session);
-    setHistory(await db.focusSessions.toArray());
+    if (user) {
+      const sessions = await db.focusSessions.where('userId').equals(user.id).toArray();
+      setHistory(sessions.filter((s) => s.completedAt.slice(0, 10) === new Date().toISOString().slice(0, 10)));
+    }
 
     if (supabase) {
-      await supabase.from('focus_sessions').insert(session);
+      await supabase.from('focus_sessions').insert({
+        user_id: session.userId,
+        course_id: session.courseId,
+        note_id: session.noteId,
+        duration_minutes: session.durationMinutes,
+        completed_at: session.completedAt
+      });
     }
 
     if (session.courseId) {
       const course = await db.courses.get(session.courseId);
       if (course?.id) {
-        await db.courses.update(course.id, { progress: Math.min(100, course.progress + 2) });
+        await db.courses.update(course.id, { progress: Math.min(100, course.progress + 2), updatedAt: new Date().toISOString() });
       }
     }
-  }, [courseId, noteId]);
+  }, [courseId, noteId, user]);
 
   useEffect(() => {
     if (seconds > 0) return;
